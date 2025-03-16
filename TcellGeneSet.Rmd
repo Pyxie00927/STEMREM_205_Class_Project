@@ -1,0 +1,116 @@
+
+
+```{r}
+library(DESeq2)
+library(ggplot2)
+#library(tidyverse)
+library(ComplexHeatmap)
+library("org.Hs.eg.db")
+library(clusterProfiler)
+library(enrichplot)
+library(DOSE)
+library(AnnotationDbi)
+library(RColorBrewer)
+```
+
+#T cell geneset running GO term and GSEA
+
+```{r}
+genesets <- read.delim("deseq2_results_3dcc_vs_3dnc_v2.csv", header = TRUE, row.names = 1, sep = ",")
+rownames(genesets) <- genesets$gene
+genesets$gene <- NULL
+genesets_filtered <- genesets[genesets$adjusted_p < 0.01,]
+
+```
+
+#Running GSEA
+
+```{r}
+# eliminate noise , take only log2FoldChnage >1 and padj<0.05
+res_gse <- genesets_filtered[genesets_filtered$log2FC >0.4,]
+#order based on log2foldchange 
+res_gse <- genesets_filtered[order(-genesets_filtered$log2FC),]
+gene_list <- res_gse$log2FC
+names(gene_list) <- rownames(res_gse)
+
+
+
+```
+
+
+```{r}
+gse <- gseGO(gene_list,
+             ont= "BP",
+             keyType = "SYMBOL",
+             scoreType = "pos",
+             minGSSize = 50, 
+             #maxGSSize = 800, 
+             pvalueCutoff = .05, 
+             verbose = TRUE,
+             OrgDb = "org.Hs.eg.db",
+             eps = 1e-300,
+             pAdjustMethod = "BH")
+```
+
+
+```{r}
+
+gse.df <- as.data.frame(gse)
+gse.df
+```
+
+
+
+```{r}
+
+gsea_dotplot <- dotplot(gse, showCategory = 20 , font.size = 8, x = "NES") + 
+  geom_point(aes(size=Count, color= qvalue)) +
+  scale_color_gradientn(colors = rev(brewer.pal(4, "OrRd"))) +
+  theme(panel.grid = element_line()) +
+  labs(color = "FDR")
+
+gsea_dotplot
+
+```
+
+```{r}
+# save as pdf
+ggsave("gsea_dotplot_3dcc_vs_3dnc_v2.pdf", gsea_dotplot, width = 8, height = 6)
+
+
+```
+
+
+
+```{r}
+library(enrichplot)
+
+gsea_plot <- gseaplot2(gse, geneSetID = "GO:0009612", title = "response to mechanical stimulus")
+ggsave("gsea_plot_3dcc_vs_3dnc.pdf", gsea_plot, width = 8, height = 6)
+```
+
+
+```{r}
+library(GSEABase)
+
+# Load gene sets from MSigDB (GO Biological Processes)
+mech_geneset <- getGmt("GOBP_RESPONSE_TO_MECHANICAL_STIMULUS.v2024.1.Hs.gmt") 
+
+print(mech_geneset)
+
+mgenes<-mech_geneset[["GOBP_RESPONSE_TO_MECHANICAL_STIMULUS"]]@geneIds
+
+writeLines(mgenes , "GO0009612.txt")
+```
+
+#find the genes in both desep and GO pathway
+```{r}
+list <- as.data.frame(cbind(names(gene_list),gene_list))
+# Find overlapping genes
+overlapping_genes <- list[list$V1 %in% mgenes, ]
+
+# View results
+print(overlapping_genes$V1)
+
+writeLines(overlapping_genes$V1 , "overlapping_GO0009612_v2.txt")
+```
